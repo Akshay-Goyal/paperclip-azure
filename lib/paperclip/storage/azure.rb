@@ -1,4 +1,3 @@
-require 'azure/storage/blob'
 require 'paperclip/storage/azure/environment'
 
 module Paperclip
@@ -83,15 +82,12 @@ module Paperclip
 
       def expiring_url(time = 3600, style_name = default_style)
         if path(style_name)
-          uri = URI azure_uri(style_name)
-          generator = ::Azure::Storage::Common::Core::Auth::SharedAccessSignature.new azure_account_name,
-                                                                              azure_credentials[:storage_access_key]
-
-          generator.signed_uri uri, false, service:      'b',
-                                           resource:     'b',
-                                           permissions:  'r',
-                                           start:        (Time.now - (5 * 60)).utc.iso8601,
-                                           expiry:       (Time.now + time).utc.iso8601
+          signer = ::Azure::Core::Auth::SharedAccessSignature.new(
+            azure_account_name,
+            azure_credentials[:storage_access_key]
+          )
+          obj_path = path(style_name).gsub(%r{\A/}, '')
+          "#{azure_uri}?#{signer.generate_token(container_name, obj_path, 'r', time)}"
         else
           url(style_name)
         end
@@ -140,21 +136,16 @@ module Paperclip
         config
       end
 
-      def azure_storage_client
-        config = {}
-
-        [:storage_account_name, :storage_access_key, :storage_sas_token].each do |opt|
-          config[opt] = azure_credentials[opt] if azure_credentials[opt]
-        end
-
-        @azure_storage_client ||= ::Azure::Storage::Common::Client.create config
-      end
-
       def obtain_azure_instance_for(options)
         instances = (Thread.current[:paperclip_azure_instances] ||= {})
         return instances[options] if instances[options]
 
-        service = ::Azure::Storage::Blob::BlobService.new(client: azure_storage_client)
+        if options[:use_development_storage]
+          service = ::Azure::Storage::Blob::BlobService.create(use_development_storage: true)
+        else
+          service = ::Azure::Storage::Blob::BlobService.create(storage_account_name: options[:storage_account_name],
+                                                               storage_access_key: options[:storage_access_key])
+        end
         # LinearRetryPolicy throws some argument error. Have raised an issue in azure-storage-ruby repo - https://github.com/Azure/azure-storage-ruby/issues/121
         # Till then using exponential retry filter with smaller retry values
         service.with_filter ::Azure::Storage::Common::Core::Filter::ExponentialRetryPolicyFilter.new(2, 10, 20) if options[:with_retry] 

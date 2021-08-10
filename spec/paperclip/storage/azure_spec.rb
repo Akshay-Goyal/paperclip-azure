@@ -51,21 +51,6 @@ describe Paperclip::Storage::Azure do
     end
   end
 
-  describe "#azure_storage_client" do
-    before do
-      rebuild_model storage: :azure,
-                    azure_credentials: config
-      @dummy = Dummy.new
-    end
-
-    subject { @dummy.avatar.azure_storage_client.options }
-
-    it "accepts storage SAS tokens" do
-      expect(subject).to include(:storage_sas_token)
-      expect(subject[:storage_sas_token]).to include('testing')
-    end
-  end
-
   describe '#container_name' do
     describe ":container option via :azure_credentials" do
       before do
